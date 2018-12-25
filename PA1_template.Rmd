@@ -1,25 +1,177 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
-output: 
+author: "Dhaval Mandalia"
+date: "25th December 2018"
+output:
   html_document:
     keep_md: true
 ---
 
+```{r setoptions,tidy=TRUE}
+library(knitr)
+opts_chunk$set(tidy=TRUE)
+```
 
 ## Loading and preprocessing the data
+Load CSV file to import data
+```{r loadfile}
+setwd("D:/Documents/Training/John Hopkins Data Science/Course 5 - Reproducible Research/Project/Project 1/Reproducible_Research_1")
+unzip("activity.zip")
+activity <- read.csv("activity.csv",header=TRUE)
+```
 
+Preprocess the data:
+```{r checkdata}
+head(activity)
+str(activity)
+```
+Interval is integer and date is a factor. Change these data types to POSIX time and POSIX date.
+```{r preprocess}
+activity$date <- as.POSIXct(strptime(activity$date,"%Y-%m-%d"),tz="")
+activity$time <- sprintf("%04d", activity$interval)
+activity$time <- as.POSIXct(activity$time,format = "%H%M", usetz = FALSE ,tz="")
+#activity$time <- format(as.POSIXct(activity$time) ,format = "%H:%M:%S")
+```
+
+Check the data again
+```{r Checkdata2}
+head(activity)
+str(activity)
+```
 
 
 ## What is mean total number of steps taken per day?
+For this part of the assignment, you can ignore the missing values in the dataset.
 
+1. Calculate the total number of steps taken per day
+2. If you do not understand the difference between a histogram and a barplot, research the difference between them. Make a histogram of the total number of steps taken each day
+3. Calculate and report the mean and median of the total number of steps taken per day
 
+```{r meanvalues}
+total_steps_per_day <- aggregate(list(total_steps=activity$steps),by=list(date=activity$date),FUN=sum,na.rm=TRUE)
+head(total_steps_per_day, 10)
+library(ggplot2)
+ggplot(total_steps_per_day,aes(x=total_steps)) + geom_histogram(fill="orange",bindwidth=30)+
+  labs(title="Daily Step Count",x="Steps", y="Frequency")
+```
+
+Calculate the mean and median number of steps per day
+```{r calculate_mean_median}
+mean_total_steps <- mean(total_steps_per_day$total_steps)
+median_total_steps <- median(total_steps_per_day$total_steps,na.rm=T)
+
+cat("Mean: ",mean_total_steps)
+cat("Median: ",median_total_steps)
+
+```
 
 ## What is the average daily activity pattern?
+Use the aggregate() function to obtain the average number of steps for each time interval
+```{r dailyaverage}
+average_steps_by_time <- aggregate(list(average_steps = activity$steps),
+                                   by=list(time = activity$time,
+                                           interval = activity$interval),
+                                   FUN=mean,
+                                   na.rm=TRUE)
+plot(average_steps ~ time,
+     data=average_steps_by_time,
+     xlab="Time interval",
+     ylab="Mean steps",
+     main="Mean Steps By Time Interval",
+     type="l",
+     col="orange",
+     lwd=2)
+```
+Find time interval with the maximum average number of steps
+```{r MaxAvgSteps}
+max_average_steps<-which.max(average_steps_by_time$average_steps)
 
+timeMostSteps <-  gsub("([0-9]{1,2})([0-9]{2})", "\\1:\\2", average_steps_by_time[max_average_steps,'interval'])
 
+cat("Time Interval With Most Steps: ",timeMostSteps)
+
+```
 
 ## Imputing missing values
 
+```{r imputevalues}
 
+sum(is.na(activity[,"steps"]))
+
+imputed_value <- merge(activity,average_steps_by_time,by="interval")
+
+imputed_value <- within(imputed_value, steps <- ifelse(is.na(imputed_value$steps),
+                                                       imputed_value$average_steps,
+                                                       imputed_value$steps))
+total_steps_per_day_imputed <- aggregate(list(total_steps = imputed_value$steps),
+                                         by=list(date = imputed_value$date),
+                                         FUN=sum,
+                                         na.rm=FALSE)
+
+```
+Draw histograms showing the distribution of total steps (frequency and density) with the imputed values.
+```{r plotimputation}
+# frequencies 
+par(mfrow=c(1,2))
+hist(total_steps_per_day_imputed$total_steps,
+     breaks=30,
+     xlab="Total Steps",
+     main="Total Steps Per Day",
+     col="orange")
+# density
+plot(density(total_steps_per_day_imputed$total_steps,
+             na.rm=TRUE),
+     xlab="Total Steps",
+     ylab="Density",
+     main="Total Steps Per Day",     
+     col="blue",
+     lwd=3)
+
+
+
+cat("Mean: ",mean(total_steps_per_day_imputed$total_steps))
+cat("Median: ",median(total_steps_per_day_imputed$total_steps))
+
+```
+The mean and median total number of steps are now equal to one another and higher with the imputed values.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r findweekday}
+# Find Weekday
+imputed_value$weekday <- weekdays(activity$date)
+
+imputed_value$weekend_indicator <- as.factor(apply(imputed_value["weekday"], 1, function(x) {
+  switch(x,
+         "Sunday" = "weekend",
+         "Saturday" = "weekend",
+         "weekday")
+}))
+
+str(imputed_value)
+```
+
+```{r weekendvsweekday}
+
+average_steps_by_time_weekend <- aggregate(list(average_steps = imputed_value$steps),
+                                      by=list(time       = imputed_value$time.x,
+                                      daytype    = imputed_value$weekend_indicator),
+                                      FUN=mean)
+qplot(x = time,
+      y = average_steps,
+      geom="path",
+      data = average_steps_by_time_weekend, 
+      xlab="Time interval",
+      ylab="Average steps",
+      main="Activity Patterns\nWeekdays vs. Weekends",
+      facets = daytype ~ .)
+```
+
+```{r weekendhist}
+
+library(psych)
+by(average_steps_by_time_weekend,
+   average_steps_by_time_weekend$daytype,
+   FUN=describe)
+```
+End of Assignment
